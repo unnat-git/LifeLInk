@@ -227,7 +227,10 @@ export default function TrackingPage() {
               <Button
                 size="lg"
                 className="w-full gap-2 h-12 text-base font-semibold"
-                onClick={() => setCurrentPage('sos')}
+                onClick={() => {
+                  setCurrentPage('sos');
+                  router.push('/?page=sos');
+                }}
               >
                 <Siren className="h-5 w-5" />
                 Go to SOS
