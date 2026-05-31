@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Sidebar from '@/components/layout/Sidebar';
 import MobileSidebar from '@/components/layout/MobileSidebar';
 import Topbar from '@/components/layout/Topbar';
-import SOSFloatingButton from '@/components/dashboard/SOSFloatingButton';
 import SOSAlertBanner from '@/components/dashboard/SOSAlertBanner';
 import MedicalChatbot from '@/components/ai/MedicalChatbot';
 import { useNavigationStore } from '@/store';
@@ -60,7 +59,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <main className="flex-1 p-4 md:p-6 overflow-y-auto">
           {children}
         </main>
-        <SOSFloatingButton />
       </motion.div>
     </div>
   );
