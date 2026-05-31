@@ -24,9 +24,11 @@ export default function HospitalScannerPage() {
 
   const handleScanResult = useCallback(async (result: string) => {
     try {
-      let urlStr = result;
+      let urlStr = result.trim();
+      toast.info(`Scanned: ${urlStr}`); // Show what was read
+
       // Fallback for raw parsing if protocol is missing
-      if (!urlStr.startsWith('http')) {
+      if (!urlStr.toLowerCase().startsWith('http')) {
         urlStr = 'https://' + urlStr;
       }
       

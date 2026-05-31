@@ -6,6 +6,7 @@ export const viewport: Viewport = {
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import AuthProvider from "@/components/providers/AuthProvider";
 
@@ -49,6 +50,7 @@ export default function RootLayout({
           <ThemeProvider>
             {children}
             <Toaster />
+            <SonnerToaster position="top-right" />
           </ThemeProvider>
         </AuthProvider>
       </body>
