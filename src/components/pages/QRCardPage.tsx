@@ -131,7 +131,8 @@ export default function QRCardPage() {
   const allergyData: any[] = []; // Removed dummy allergies
 
   // QR Code data as a URL for phone scanning
-  const baseUrl = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_BASE_URL || window.location.origin) : 'http://localhost:3000';
+  // Force deployed link to ensure QR codes are always scannable from external devices
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://lifelink-beta-seven.vercel.app';
   const qrData = patient.id !== '000000' ? `${baseUrl}/emergency/${patient.id}` : '';
 
   const handleDownload = async () => {

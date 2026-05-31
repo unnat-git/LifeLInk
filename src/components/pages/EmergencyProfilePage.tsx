@@ -126,11 +126,11 @@ export default function EmergencyProfilePage() {
   const age = calculateAge(patient.dateOfBirth || '1990-01-01');
   const bloodLabel = BLOOD_GROUP_LABELS[patient.bloodGroup || 'O_POS'];
 
-  const [qrData, setQrData] = useState(`${process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000'}/emergency/${patient.id}`);
+  const [qrData, setQrData] = useState(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://lifelink-beta-seven.vercel.app'}/emergency/${patient.id}`);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://lifelink-beta-seven.vercel.app';
       setQrData(`${baseUrl}/emergency/${patient.id}`);
     }
   }, [patient.id]);
