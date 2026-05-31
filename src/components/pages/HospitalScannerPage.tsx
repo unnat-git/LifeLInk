@@ -23,15 +23,29 @@ export default function HospitalScannerPage() {
   const [isFetching, setIsFetching] = useState(false);
 
   const handleScanResult = useCallback(async (result: string) => {
-    // The result is expected to be a URL: e.g. "https://yourapp.com/api/patient/qr-profile?token=base64url..."
-    // We will extract the token or just fetch the URL directly.
     try {
-      const url = new URL(result);
+      let urlStr = result;
+      // Fallback for raw parsing if protocol is missing
+      if (!urlStr.startsWith('http')) {
+        urlStr = 'https://' + urlStr;
+      }
+      
+      const url = new URL(urlStr);
       const token = url.searchParams.get('token');
+      
       if (token) {
         await fetchPatientData(token, 'QR');
+      } else if (url.pathname.includes('/emergency/')) {
+        const parts = url.pathname.split('/').filter(Boolean);
+        const id = parts[parts.length - 1];
+        if (id) {
+          await fetchPatientData(`patientId:${id}`, 'QR');
+        } else {
+          toast.error('Invalid QR code format: missing patient ID');
+          setScannerState('READY');
+        }
       } else {
-        toast.error('Invalid QR code format: missing token');
+        toast.error('Invalid QR code format: missing token or ID');
         setScannerState('READY');
       }
     } catch (e) {
@@ -55,6 +69,8 @@ export default function HospitalScannerPage() {
       let url = `/api/patient/qr-profile?token=${tokenOrId}`;
       if (method === 'MANUAL') {
         url = `/api/patient/qr-profile?shortId=${tokenOrId}`;
+      } else if (tokenOrId.startsWith('patientId:')) {
+        url = `/api/patient/qr-profile?patientId=${tokenOrId.replace('patientId:', '')}`;
       }
 
       const res = await fetch(url);

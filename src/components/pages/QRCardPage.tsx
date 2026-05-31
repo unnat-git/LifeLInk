@@ -131,19 +131,8 @@ export default function QRCardPage() {
   const allergyData: any[] = []; // Removed dummy allergies
 
   // QR Code data as a URL for phone scanning
-  const [qrData, setQrData] = useState('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && patient.id !== '000000') {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
-      const payload = btoa(JSON.stringify({
-        patientId: patient.id,
-        issued: Date.now(),
-      })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      
-      setQrData(`${baseUrl}/api/patient/qr-profile?token=${payload}`);
-    }
-  }, [patient.id]);
+  const baseUrl = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_BASE_URL || window.location.origin) : 'http://localhost:3000';
+  const qrData = patient.id !== '000000' ? `${baseUrl}/emergency/${patient.id}` : '';
 
   const handleDownload = async () => {
     try {

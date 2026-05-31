@@ -32,14 +32,17 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const token = searchParams.get('token');
     const shortId = searchParams.get('shortId');
+    const patientIdParam = searchParams.get('patientId');
     
-    if (!token && !shortId) {
-      return NextResponse.json({ error: 'Missing token or shortId' }, { status: 400 });
+    if (!token && !shortId && !patientIdParam) {
+      return NextResponse.json({ error: 'Missing token, shortId, or patientId' }, { status: 400 });
     }
 
     let patientId: string | null = null;
 
-    if (token) {
+    if (patientIdParam) {
+      patientId = patientIdParam;
+    } else if (token) {
       try {
         const decodedToken = Buffer.from(token, 'base64url').toString('utf-8');
         const payload = JSON.parse(decodedToken);
