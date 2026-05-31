@@ -18,7 +18,7 @@
     "db:setup": "prisma db push && npx ts-node --compiler-options {\"module\":\"commonjs\"} prisma/seed.ts"
   },
   "prisma": {
-    "seed": "ts-node --compiler-options {\"module\":\"commonjs\"} prisma/seed.ts"
+    "seed": "ts-node --compiler-options {\"module\":\"commonjs\"} prisma/seed.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
