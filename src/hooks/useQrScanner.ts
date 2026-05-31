@@ -11,22 +11,33 @@ export function useQrScanner(onResult: (result: string) => void) {
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
+  
+  // Use a ref so the callback is always fresh — avoids stale closure bug
+  const onResultRef = useRef(onResult);
+  useEffect(() => {
+    onResultRef.current = onResult;
+  }, [onResult]);
 
   // Initialize devices
   useEffect(() => {
     async function initDevices() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        stream.getTracks().forEach((track) => track.stop()); // request permission but close immediately
-        
+        stream.getTracks().forEach((track) => track.stop()); // request permission then close
+
         setHasCameraPermission(true);
         const allDevices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = allDevices.filter((device) => device.kind === 'videoinput');
-        
+
         setDevices(videoDevices);
         if (videoDevices.length > 0) {
-          // Prefer environment/back camera if available
-          const backCamera = videoDevices.find((d) => d.label.toLowerCase().includes('back'));
+          // Prefer back/environment camera for phones
+          const backCamera = videoDevices.find(
+            (d) =>
+              d.label.toLowerCase().includes('back') ||
+              d.label.toLowerCase().includes('environment') ||
+              d.label.toLowerCase().includes('rear')
+          );
           setSelectedDeviceId(backCamera ? backCamera.deviceId : videoDevices[0].deviceId);
         }
       } catch (err) {
@@ -39,44 +50,59 @@ export function useQrScanner(onResult: (result: string) => void) {
 
   const stopScan = useCallback(() => {
     if (controlsRef.current) {
-      controlsRef.current.stop();
+      try {
+        controlsRef.current.stop();
+      } catch (e) {
+        // ignore stop errors
+      }
       controlsRef.current = null;
     }
     setIsScanning(false);
   }, []);
 
   const startScan = useCallback(async () => {
-    if (!videoRef.current || !selectedDeviceId) {
-      toast.error('No camera available or selected');
+    if (!videoRef.current) {
+      toast.error('Camera element not ready');
       return;
     }
 
+    // Stop any existing scan first
+    if (controlsRef.current) {
+      stopScan();
+    }
+
     try {
-      const codeReader = new BrowserQRCodeReader();
+      const hints = new Map();
+      // @zxing/library DecodeHintType.TRY_HARDER = 3
+      hints.set(3, true);
+
+      const codeReader = new BrowserQRCodeReader(hints);
       setIsScanning(true);
-      
+
+      // If no device selected, try without specifying device (lets browser pick)
+      const deviceId = selectedDeviceId || undefined;
+
       const controls = await codeReader.decodeFromVideoDevice(
-        selectedDeviceId,
+        deviceId,
         videoRef.current,
         (result: Result | undefined, error: Error | undefined) => {
           if (result) {
-            onResult(result.getText());
-            stopScan(); // Auto-stop on first successful scan
+            const text = result.getText();
+            // Use ref so we always get the latest callback — fixes stale closure
+            onResultRef.current(text);
+            stopScan();
           }
-          if (error && error.name !== 'NotFoundException') {
-            // Log only real errors, not "QR not found in current frame"
-            // console.error(error);
-          }
+          // Silently ignore NotFoundException (no QR in current frame)
         }
       );
-      
+
       controlsRef.current = controls;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to start scanner', err);
-      toast.error('Failed to start camera scanner');
+      toast.error(`Failed to start camera: ${err?.message || 'Unknown error'}`);
       setIsScanning(false);
     }
-  }, [selectedDeviceId, onResult, stopScan]);
+  }, [selectedDeviceId, stopScan]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -93,6 +119,6 @@ export function useQrScanner(onResult: (result: string) => void) {
     hasCameraPermission,
     devices,
     selectedDeviceId,
-    setSelectedDeviceId
+    setSelectedDeviceId,
   };
 }
