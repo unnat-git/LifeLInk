@@ -20,6 +20,8 @@ import {
   Bug,
   ArrowRight,
   Copy,
+  Maximize2,
+  X,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -125,6 +127,7 @@ export default function QRCardPage() {
   const [isFlipped, setIsFlipped] = useState(false);
   const [cardVariant, setCardVariant] = useState<CardVariant>('blue');
   const [showQRData, setShowQRData] = useState(true);
+  const [showQRModal, setShowQRModal] = useState(false);
 
   const variant = CARD_VARIANTS[cardVariant];
 
@@ -265,6 +268,70 @@ export default function QRCardPage() {
   };
 
   return (
+    <>
+    {/* Fullscreen QR Modal */}
+    <AnimatePresence>
+      {showQRModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          onClick={() => setShowQRModal(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className="bg-white rounded-3xl p-8 flex flex-col items-center gap-5 shadow-2xl max-w-sm w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-blue-600" />
+                <span className="font-bold text-gray-800 text-sm">LifeLink QR Code</span>
+              </div>
+              <button
+                onClick={() => setShowQRModal(false)}
+                className="text-gray-400 hover:text-gray-700 transition-colors rounded-full p-1 hover:bg-gray-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="bg-white border-4 border-gray-100 rounded-2xl p-4 shadow-inner">
+              <QRCodeSVG
+                value={qrData || 'https://lifelink-beta-seven.vercel.app'}
+                size={260}
+                fgColor="#1e3a5f"
+                bgColor="#ffffff"
+                level="H"
+                imageSettings={{
+                  src: `data:image/svg+xml;base64,${btoa(
+                    `<svg width="52" height="52" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L3 7v5c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7L12 2z" fill="#0284c7" opacity="0.9"/><path d="M9 12l2 2 4-4" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`
+                  )}`,
+                  height: 52,
+                  width: 52,
+                  excavate: true,
+                }}
+              />
+            </div>
+
+            <div className="text-center">
+              <p className="text-sm font-semibold text-gray-800">{patient.name}</p>
+              <p className="text-xs text-gray-400 mt-1">Scan this code to access emergency profile</p>
+            </div>
+
+            <div className="flex items-center gap-2 bg-blue-50 text-blue-700 text-xs px-4 py-2 rounded-full">
+              <QrCode className="h-3.5 w-3.5" />
+              Point camera directly at the QR code
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
     <motion.div
       variants={stagger}
       initial="hidden"
@@ -429,6 +496,17 @@ export default function QRCardPage() {
               />
             ))}
           </div>
+
+          {/* Full Size QR Button */}
+          <Button
+            onClick={() => setShowQRModal(true)}
+            className="w-full gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25"
+            size="lg"
+            disabled={!qrData}
+          >
+            <Maximize2 className="h-4 w-4" />
+            View Full-Size QR Code
+          </Button>
         </motion.div>
 
         {/* Right - Card Contents */}
@@ -562,5 +640,6 @@ export default function QRCardPage() {
         </motion.div>
       </div>
     </motion.div>
+    </>
   );
 }
