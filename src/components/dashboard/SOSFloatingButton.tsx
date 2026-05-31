@@ -2,16 +2,16 @@
 
 import { motion } from 'framer-motion';
 import { Siren } from 'lucide-react';
-import { useNavigationStore, useEmergencyStore } from '@/store';
+import { useNavigationStore } from '@/store';
 import { useSession } from 'next-auth/react';
 import { cn } from '@/lib/utils';
 
 export default function SOSFloatingButton() {
   const { currentPage, setCurrentPage } = useNavigationStore();
-  const activateSOS = useEmergencyStore((s) => s.activateSOS);
   const { data: session } = useSession();
   const user = session?.user;
 
+  // Only show for patients, and not when already on SOS page
   const isVisible = user?.role === 'PATIENT' && currentPage !== 'sos';
 
   if (!isVisible) return null;
@@ -24,7 +24,7 @@ export default function SOSFloatingButton() {
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.95 }}
       onClick={() => {
-        activateSOS(3, 'Critical emergency reported', user?.name || 'Unknown', '');
+        // Navigate to SOS page — user must go through proper hold → confirm → countdown flow
         setCurrentPage('sos');
       }}
       className={cn(
@@ -39,7 +39,7 @@ export default function SOSFloatingButton() {
         'group cursor-pointer',
         'border-0 outline-none',
       )}
-      aria-label="Activate SOS Emergency"
+      aria-label="Go to SOS Emergency page"
     >
       {/* Pulse ring 1 */}
       <span className="absolute inset-0 rounded-full bg-emergency animate-ping opacity-20" />

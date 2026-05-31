@@ -136,7 +136,9 @@ export default function QRCardPage() {
   // QR Code data as a URL for phone scanning
   // Force deployed link to ensure QR codes are always scannable from external devices
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://lifelink-beta-seven.vercel.app';
-  const qrData = patient.id !== '000000' ? `${baseUrl}/emergency/${patient.id}` : '';
+  // Use profile id if available, fall back to session user id (available immediately)
+  const effectiveId = profile?.id || user?.id;
+  const qrData = effectiveId ? `${baseUrl}/emergency/${effectiveId}` : '';
 
   const handleDownload = async () => {
     try {
@@ -502,10 +504,10 @@ export default function QRCardPage() {
             onClick={() => setShowQRModal(true)}
             className="w-full gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25"
             size="lg"
-            disabled={!qrData}
+            disabled={!effectiveId}
           >
             <Maximize2 className="h-4 w-4" />
-            View Full-Size QR Code
+            {loading ? 'Loading QR...' : 'View Full-Size QR Code'}
           </Button>
         </motion.div>
 
