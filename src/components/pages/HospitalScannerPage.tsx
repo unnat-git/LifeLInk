@@ -146,7 +146,7 @@ export default function HospitalScannerPage() {
             <div className="lg:col-span-2 space-y-6">
               <Card>
                 <CardContent className="p-6 flex flex-col items-center">
-                  <QrScanner videoRef={videoRef} isScanning={isScanning} />
+                  <QrScanner videoRef={videoRef} isScanning={isScanning} isFetching={isFetching} />
                   
                   <div className="mt-8 flex flex-col sm:flex-row gap-4 w-full max-w-md">
                     {scannerState === 'READY' ? (

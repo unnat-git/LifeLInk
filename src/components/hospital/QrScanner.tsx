@@ -1,12 +1,14 @@
 import { RefObject } from 'react';
 import { motion } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
 
 interface QrScannerProps {
   videoRef: RefObject<HTMLVideoElement | null>;
   isScanning: boolean;
+  isFetching?: boolean;
 }
 
-export function QrScanner({ videoRef, isScanning }: QrScannerProps) {
+export function QrScanner({ videoRef, isScanning, isFetching }: QrScannerProps) {
   return (
     <div className="relative w-full aspect-[4/3] max-w-md mx-auto bg-black rounded-xl overflow-hidden shadow-inner border border-border">
       {/* Video element for camera feed */}
@@ -57,9 +59,17 @@ export function QrScanner({ videoRef, isScanning }: QrScannerProps) {
       )}
 
       {/* Idle state overlay */}
-      {!isScanning && (
+      {!isScanning && !isFetching && (
         <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
           <p className="text-muted-foreground text-sm font-medium">Camera is inactive</p>
+        </div>
+      )}
+
+      {/* Fetching state overlay */}
+      {isFetching && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm z-20">
+          <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+          <p className="text-foreground font-medium animate-pulse">Fetching Patient Data...</p>
         </div>
       )}
     </div>
