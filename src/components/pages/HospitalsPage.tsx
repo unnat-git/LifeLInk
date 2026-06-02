@@ -35,8 +35,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { DEMO_HOSPITALS } from '@/lib/mock-data';
-import { haversineDistance } from '@/lib/constants';
 import type { Hospital, HospitalWithDistance } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import MapWrapper from '@/components/ui/MapWrapper';
@@ -166,7 +164,6 @@ function osmNodeToHospital(node: any): Hospital {
   };
 }
 
-// ÔöÇÔöÇÔöÇ Fetch real hospitals from OpenStreetMap Overpass API ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 async function fetchNearbyHospitals(lat: number, lng: number, radiusM = 10000): Promise<Hospital[]> {
   const query = `
     [out:json][timeout:25];
@@ -180,31 +177,38 @@ async function fetchNearbyHospitals(lat: number, lng: number, radiusM = 10000): 
     out center body;
   `.trim();
 
-  const res = await fetch(
-    `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`,
-    { signal: AbortSignal.timeout(20000) }
-  );
-  if (!res.ok) throw new Error('Overpass API error');
-  const data = await res.json();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-  const elements: any[] = data.elements || [];
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: `data=${encodeURIComponent(query)}`,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      signal: controller.signal,
+    });
+    
+    if (!res.ok) throw new Error('Overpass API error');
+    const data = await res.json();
 
-  // Normalise ways (which have a .center) and nodes (which have .lat/.lon)
-  const nodes = elements
-    .map((el) => {
-      if (el.type === 'way' && el.center) {
-        return { ...el, lat: el.center.lat, lon: el.center.lon };
-      }
-      return el;
-    })
-    .filter((el) => el.lat && el.lon && el.tags?.name);
+    const elements: any[] = data.elements || [];
 
-  return nodes.map(osmNodeToHospital);
+    const nodes = elements
+      .map((el) => {
+        if (el.type === 'way' && el.center) {
+          return { ...el, lat: el.center.lat, lon: el.center.lon };
+        }
+        return el;
+      })
+      .filter((el) => el.lat && el.lon && el.tags?.name);
+
+    return nodes.map(osmNodeToHospital);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
-
-const ALL_SPECIALTIES = Array.from(
-  new Set(DEMO_HOSPITALS.flatMap((h) => h.specializations)),
-).sort();
 
 // ÔöÇÔöÇÔöÇ Main Component ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 export default function HospitalsPage() {
@@ -270,8 +274,8 @@ export default function HospitalsPage() {
 
   // Decide which hospital list to use
   const sourceHospitals = useMemo<Hospital[]>(() => {
-    if (userLocation && realHospitals && realHospitals.length > 0) return realHospitals;
-    return DEMO_HOSPITALS.filter((h) => h.isActive);
+    if (userLocation && realHospitals) return realHospitals;
+    return [];
   }, [userLocation, realHospitals]);
 
   const hospitalsWithDistance = useMemo<HospitalWithDistance[]>(() => {
@@ -329,10 +333,10 @@ export default function HospitalsPage() {
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Hospitals</h1>
           <p className="text-muted-foreground mt-1">
             {isUsingRealData
-              ? `${realHospitals!.length} real hospitals found within 10 km of you`
+              ? `${realHospitals!.length} hospitals found within 10 km of you`
               : userLocation && fetchStatus === 'fetching'
                 ? 'Searching nearby hospitals...'
-                : 'Find nearby hospitals and emergency care'}
+                : 'Find nearby hospitals within 10km'}
           </p>
         </div>
 
@@ -387,7 +391,7 @@ export default function HospitalsPage() {
                 Searching real hospitals near you...
               </p>
               <p className="text-xs text-blue-600 dark:text-blue-500 mt-0.5">
-                Querying OpenStreetMap within 10 km radius
+                Searching within 10 km radius
               </p>
             </div>
           </motion.div>
@@ -405,10 +409,10 @@ export default function HospitalsPage() {
             <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-                Showing real hospitals within 10 km of your location
+                Showing hospitals within 10 km of your location
               </p>
               <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-0.5">
-                Live data from OpenStreetMap ┬À Your location: {userLocation?.lat.toFixed(4)}, {userLocation?.lng.toFixed(4)}
+                Your location: {userLocation?.lat.toFixed(4)}, {userLocation?.lng.toFixed(4)}
               </p>
             </div>
             <Badge className="bg-emerald-600 text-white border-0 text-xs shrink-0">
@@ -429,10 +433,10 @@ export default function HospitalsPage() {
             <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
             <div className="flex-1">
               <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                No hospitals found on map within 10 km
+                No hospitals found within 10 km
               </p>
               <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
-                Showing demo hospitals for reference instead
+                Try expanding your search area or checking your location.
               </p>
             </div>
           </motion.div>
@@ -445,15 +449,15 @@ export default function HospitalsPage() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
+            className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
           >
-            <WifiOff className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <WifiOff className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0" />
             <div className="flex-1">
-              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                Couldn&apos;t fetch live hospital data
+              <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+                Couldn't fetch hospital data
               </p>
-              <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
-                Showing demo hospitals ÔÇö distances calculated from your real location
+              <p className="text-xs text-red-600 dark:text-red-500 mt-0.5">
+                Please check your connection and try again.
               </p>
             </div>
             <Button
@@ -540,7 +544,6 @@ export default function HospitalsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm text-muted-foreground">
             Showing {filteredHospitals.length} hospital{filteredHospitals.length !== 1 ? 's' : ''}
-            {isUsingRealData ? ' ┬À Live OSM data' : ''}
           </p>
           {isUsingRealData && (
             <Badge variant="outline" className="text-xs gap-1 text-emerald-600 border-emerald-300">
@@ -646,11 +649,10 @@ export default function HospitalsPage() {
                           24/7 Emergency
                         </Badge>
                       )}
-                      {/* Live badge for real OSM data */}
                       {isUsingRealData && (
                         <Badge className="absolute top-3 left-3 bg-emerald-500/80 text-white border-0 backdrop-blur-sm text-[10px] font-bold gap-1">
                           <CheckCircle2 className="h-3 w-3" />
-                          Live
+                          Found
                         </Badge>
                       )}
                       <div className="absolute bottom-3 left-4 w-10 h-10 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
