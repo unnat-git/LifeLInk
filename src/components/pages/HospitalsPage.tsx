@@ -168,53 +168,85 @@ function osmNodeToHospital(node: any): Hospital {
   };
 }
 
-// Overpass mirrors — tried in sequence until one succeeds
+// Overpass mirrors — raced in parallel, fastest one wins
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
-// Fetch hospitals directly from Overpass (GET, no custom headers = no CORS preflight)
-async function fetchNearbyHospitals(lat: number, lng: number, radiusM = 10000): Promise<Hospital[]> {
-  const query = [
-    '[out:json][timeout:20];',
-    '(',
-    `node["amenity"="hospital"](around:${radiusM},${lat},${lng});`,
-    `node["healthcare"="hospital"](around:${radiusM},${lat},${lng});`,
-    `way["amenity"="hospital"](around:${radiusM},${lat},${lng});`,
-    `way["healthcare"="hospital"](around:${radiusM},${lat},${lng});`,
-    ');',
-    'out center body;',
-  ].join('');
-
-  let lastError: Error = new Error('No mirrors available');
-
-  for (const mirror of OVERPASS_MIRRORS) {
-    try {
-      const url = `${mirror}?data=${encodeURIComponent(query)}`;
-      const res = await fetch(url, {
-        // Simple GET with no custom headers — browsers allow this cross-origin
-        signal: AbortSignal.timeout(22000),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const elements: any[] = data.elements || [];
-      const nodes = elements
-        .map((el) =>
-          el.type === 'way' && el.center
-            ? { ...el, lat: el.center.lat, lon: el.center.lon }
-            : el,
-        )
-        .filter((el) => el.lat && el.lon && el.tags?.name);
-      return nodes.map(osmNodeToHospital);
-    } catch (err: any) {
-      lastError = err;
-    }
-  }
-
-  throw lastError;
+function buildOverpassQuery(lat: number, lng: number, radiusM: number): string {
+  // Compact, fast query — nodes only first (lighter than ways)
+  return (
+    `[out:json][timeout:15];` +
+    `(` +
+    `node["amenity"="hospital"](around:${radiusM},${lat},${lng});` +
+    `node["healthcare"="hospital"](around:${radiusM},${lat},${lng});` +
+    `way["amenity"="hospital"](around:${radiusM},${lat},${lng});` +
+    `);` +
+    `out center body;`
+  );
 }
+
+function parseOverpassResponse(data: any): Hospital[] {
+  const elements: any[] = data.elements || [];
+  return elements
+    .map((el) =>
+      el.type === 'way' && el.center
+        ? { ...el, lat: el.center.lat, lon: el.center.lon }
+        : el,
+    )
+    .filter((el) => el.lat && el.lon && el.tags?.name)
+    .map(osmNodeToHospital);
+}
+
+async function fetchFromMirror(mirrorUrl: string, query: string, timeoutMs: number): Promise<Hospital[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${mirrorUrl}?data=${encodeURIComponent(query)}`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${mirrorUrl}`);
+    const data = await res.json();
+    return parseOverpassResponse(data);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchFromCorsProxy(query: string): Promise<Hospital[]> {
+  // corsproxy.io wraps any URL with CORS headers
+  const targetUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+  const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(proxyUrl, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
+    const data = await res.json();
+    return parseOverpassResponse(data);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Fetch hospitals — races all Overpass mirrors simultaneously, uses CORS proxy as fallback
+async function fetchNearbyHospitals(lat: number, lng: number, radiusM = 10000): Promise<Hospital[]> {
+  const query = buildOverpassQuery(lat, lng, radiusM);
+
+  // Race all mirrors at once — whoever responds first wins
+  try {
+    const hospitals = await Promise.any(
+      OVERPASS_MIRRORS.map((mirror) => fetchFromMirror(mirror, query, 15000)),
+    );
+    return hospitals;
+  } catch {
+    // All mirrors failed — try via CORS proxy as last resort
+    return fetchFromCorsProxy(query);
+  }
+}
+
 
 // ÔöÇÔöÇÔöÇ Main Component ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 export default function HospitalsPage() {
