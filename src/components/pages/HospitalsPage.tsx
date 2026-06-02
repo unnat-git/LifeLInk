@@ -231,20 +231,48 @@ async function fetchFromCorsProxy(query: string): Promise<Hospital[]> {
   }
 }
 
+function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 // Fetch hospitals — races all Overpass mirrors simultaneously, uses CORS proxy as fallback
-async function fetchNearbyHospitals(lat: number, lng: number, radiusM = 10000): Promise<Hospital[]> {
+// Returns only the nearest 5 hospitals found before timeout
+async function fetchNearbyHospitals(
+  lat: number,
+  lng: number,
+  radiusM = 10000,
+  limit = 5,
+): Promise<Hospital[]> {
   const query = buildOverpassQuery(lat, lng, radiusM);
 
-  // Race all mirrors at once — whoever responds first wins
+  let hospitals: Hospital[] = [];
+
   try {
-    const hospitals = await Promise.any(
-      OVERPASS_MIRRORS.map((mirror) => fetchFromMirror(mirror, query, 15000)),
+    // Race all mirrors — 8 second window, take whatever we get first
+    hospitals = await Promise.any(
+      OVERPASS_MIRRORS.map((mirror) => fetchFromMirror(mirror, query, 8000)),
     );
-    return hospitals;
   } catch {
-    // All mirrors failed — try via CORS proxy as last resort
-    return fetchFromCorsProxy(query);
+    try {
+      // All direct mirrors failed — try CORS proxy with 10s
+      hospitals = await fetchFromCorsProxy(query);
+    } catch {
+      throw new Error('Could not reach any hospital data source');
+    }
   }
+
+  // Sort by distance from user and return nearest `limit` only
+  return hospitals
+    .map((h) => ({ h, d: haversine(lat, lng, h.latitude, h.longitude) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, limit)
+    .map(({ h }) => h);
 }
 
 
@@ -279,10 +307,10 @@ export default function HospitalsPage() {
         setGeoStatus('success');
         setSortBy('distance');
 
-        // Fetch real hospitals from OpenStreetMap
+        // Fetch real hospitals — nearest 5 within 10km before timeout
         setFetchStatus('fetching');
         try {
-          const hospitals = await fetchNearbyHospitals(lat, lng, 10000);
+          const hospitals = await fetchNearbyHospitals(lat, lng, 10000, 5);
           setRealHospitals(hospitals);
           setFetchStatus('done');
         } catch {
@@ -505,9 +533,10 @@ export default function HospitalsPage() {
               onClick={() => {
                 if (userLocation) {
                   setFetchStatus('fetching');
-                  fetchNearbyHospitals(userLocation.lat, userLocation.lng)
+                  fetchNearbyHospitals(userLocation.lat, userLocation.lng, 10000, 5)
                     .then((h) => { setRealHospitals(h); setFetchStatus('done'); })
                     .catch(() => setFetchStatus('failed'));
+
                 }
               }}
             >
