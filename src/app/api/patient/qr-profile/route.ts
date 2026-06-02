@@ -108,9 +108,14 @@ export async function GET(req: NextRequest) {
           date: e.createdAt,
           severity: e.severity,
           status: e.status,
-          hospital: e.hospitalId // Optional lookup could be added, but this matches requirements
+          hospital: e.hospitalId
         }))
       }
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      },
     });
   } catch (error) {
     console.error('[QR_PROFILE_API]', error);

@@ -33,7 +33,7 @@ export default function EmergencyProfileRoute({ params }: { params: Promise<{ id
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/users/${resolvedParams.id}`)
+    fetch(`/api/users/${resolvedParams.id}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => {
         setProfile(data);
@@ -41,6 +41,7 @@ export default function EmergencyProfileRoute({ params }: { params: Promise<{ id
       })
       .catch(() => setLoading(false));
   }, [resolvedParams.id]);
+
 
   if (loading) {
     return <div style={{ padding: 40, textAlign: 'center', fontFamily: 'sans-serif' }}>Loading emergency data...</div>;

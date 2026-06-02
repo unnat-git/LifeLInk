@@ -39,7 +39,12 @@ export async function GET(
     }
 
     const { passwordHash: _, ...safeUser } = user;
-    return NextResponse.json(safeUser);
+    return NextResponse.json(safeUser, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+    });
   } catch (error) {
     console.error('[GET /api/users/[id]]', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -77,7 +82,12 @@ export async function PATCH(
       },
     });
     const { passwordHash: _, ...safeUser } = user;
-    return NextResponse.json(safeUser);
+    return NextResponse.json(safeUser, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+    });
   } catch (error: unknown) {
     const e = error as { code?: string };
     if (e?.code === 'P2025') return NextResponse.json({ error: 'User not found' }, { status: 404 });

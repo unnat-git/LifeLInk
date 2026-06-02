@@ -103,7 +103,7 @@ export default function QRCardPage() {
 
   useEffect(() => {
     if (user?.id) {
-      fetch(`/api/users/${user.id}`)
+      fetch(`/api/users/${user.id}`, { cache: 'no-store' })
         .then((r) => r.json())
         .then((data) => {
           setProfile(data);
