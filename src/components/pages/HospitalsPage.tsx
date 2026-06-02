@@ -35,6 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { haversineDistance } from '@/lib/constants';
 import type { Hospital, HospitalWithDistance } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import MapWrapper from '@/components/ui/MapWrapper';
@@ -109,105 +110,17 @@ function renderStars(rating: number) {
   );
 }
 
-// ÔöÇÔöÇÔöÇ Convert OSM Overpass node ÔåÆ our Hospital shape ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-function osmNodeToHospital(node: any): Hospital {
-  const tags = node.tags || {};
-  const name = tags.name || tags['name:en'] || 'Unnamed Hospital';
-  const phone = tags.phone || tags['contact:phone'] || tags['emergency:phone'] || '';
-  const city = tags['addr:city'] || tags['addr:district'] || tags['addr:state'] || '';
-  const address = [
-    tags['addr:housenumber'],
-    tags['addr:street'],
-    tags['addr:suburb'],
-  ]
-    .filter(Boolean)
-    .join(', ') || tags['addr:full'] || city;
 
-  // Derive plausible bed counts from amenity/healthcare level tags
-  const level = tags['healthcare:speciality'] || tags.amenity || '';
-  const isLarge = tags['beds'] ? parseInt(tags['beds']) > 100 : level.includes('hospital');
-  const totalBeds = tags['beds'] ? parseInt(tags['beds']) : isLarge ? 200 + (node.id % 300) : 50 + (node.id % 100);
-  const availableBeds = Math.max(0, Math.floor(totalBeds * (0.1 + ((node.id % 30) / 100))));
-  const icuTotal = Math.floor(totalBeds * 0.08);
-  const icuAvailable = Math.floor(icuTotal * (0.2 + ((node.id % 5) / 10)));
-  const rating = +(3.5 + ((node.id % 15) / 10)).toFixed(1);
 
-  // Parse specializations from tags
-  const specs: string[] = [];
-  if (tags['healthcare:speciality']) {
-    specs.push(...tags['healthcare:speciality'].split(';').map((s: string) => s.trim()));
-  }
-  if (specs.length === 0) {
-    const defaults = ['Emergency Care', 'General Medicine', 'Trauma'];
-    if (node.id % 3 === 0) defaults.push('Cardiology');
-    if (node.id % 4 === 0) defaults.push('Orthopedics');
-    if (node.id % 5 === 0) defaults.push('Neurology');
-    specs.push(...defaults);
-  }
 
-  return {
-    id: `osm-${node.id}`,
-    name,
-    address,
-    city,
-    latitude: node.lat,
-    longitude: node.lon,
-    phone,
-    email: '',
-    totalBeds,
-    availableBeds,
-    icuTotal,
-    icuAvailable,
-    emergencyRating: Math.min(5, rating),
-    isActive: true,
-    specializations: specs.slice(0, 6),
-  };
-}
-
+// Fetch real hospitals via our server-side proxy (avoids CORS)
 async function fetchNearbyHospitals(lat: number, lng: number, radiusM = 10000): Promise<Hospital[]> {
-  const query = `
-    [out:json][timeout:25];
-    (
-      node["amenity"="hospital"](around:${radiusM},${lat},${lng});
-      node["amenity"="clinic"](around:${radiusM},${lat},${lng});
-      node["healthcare"="hospital"](around:${radiusM},${lat},${lng});
-      way["amenity"="hospital"](around:${radiusM},${lat},${lng});
-      way["healthcare"="hospital"](around:${radiusM},${lat},${lng});
-    );
-    out center body;
-  `.trim();
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-  try {
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: `data=${encodeURIComponent(query)}`,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      signal: controller.signal,
-    });
-    
-    if (!res.ok) throw new Error('Overpass API error');
-    const data = await res.json();
-
-    const elements: any[] = data.elements || [];
-
-    const nodes = elements
-      .map((el) => {
-        if (el.type === 'way' && el.center) {
-          return { ...el, lat: el.center.lat, lon: el.center.lon };
-        }
-        return el;
-      })
-      .filter((el) => el.lat && el.lon && el.tags?.name);
-
-    return nodes.map(osmNodeToHospital);
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  const url = `/api/hospitals/nearby?lat=${lat}&lng=${lng}&radius=${radiusM}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data.hospitals as Hospital[];
 }
 
 // ÔöÇÔöÇÔöÇ Main Component ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
