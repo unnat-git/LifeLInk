@@ -168,111 +168,164 @@ function osmNodeToHospital(node: any): Hospital {
   };
 }
 
-// Overpass mirrors — raced in parallel, fastest one wins
-const OVERPASS_MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-];
-
-function buildOverpassQuery(lat: number, lng: number, radiusM: number): string {
-  // Compact, fast query — nodes only first (lighter than ways)
-  return (
-    `[out:json][timeout:15];` +
-    `(` +
-    `node["amenity"="hospital"](around:${radiusM},${lat},${lng});` +
-    `node["healthcare"="hospital"](around:${radiusM},${lat},${lng});` +
-    `way["amenity"="hospital"](around:${radiusM},${lat},${lng});` +
-    `);` +
-    `out center body;`
-  );
-}
-
-function parseOverpassResponse(data: any): Hospital[] {
-  const elements: any[] = data.elements || [];
-  return elements
-    .map((el) =>
-      el.type === 'way' && el.center
-        ? { ...el, lat: el.center.lat, lon: el.center.lon }
-        : el,
-    )
-    .filter((el) => el.lat && el.lon && el.tags?.name)
-    .map(osmNodeToHospital);
-}
-
-async function fetchFromMirror(mirrorUrl: string, query: string, timeoutMs: number): Promise<Hospital[]> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(`${mirrorUrl}?data=${encodeURIComponent(query)}`, {
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${mirrorUrl}`);
-    const data = await res.json();
-    return parseOverpassResponse(data);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchFromCorsProxy(query: string): Promise<Hospital[]> {
-  // corsproxy.io wraps any URL with CORS headers
-  const targetUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
-  const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
-  try {
-    const res = await fetch(proxyUrl, { signal: controller.signal });
-    if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
-    const data = await res.json();
-    return parseOverpassResponse(data);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) ** 2;
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Fetch hospitals — races all Overpass mirrors simultaneously, uses CORS proxy as fallback
-// Returns only the nearest 5 hospitals found before timeout
+// --- Nominatim approach (primary — proper CORS, fast, reliable) ---
+function nominatimResultToHospital(item: any): Hospital {
+  const id = `nom-${item.place_id}`;
+  const name = item.name || item.display_name?.split(',')[0] || 'Hospital';
+  const parts = (item.display_name || '').split(',');
+  const city = parts[parts.length - 3]?.trim() || '';
+  const address = parts.slice(1, 4).join(',').trim();
+  const seed = item.place_id % 1000;
+  const totalBeds = 100 + (seed % 400);
+  const availableBeds = Math.max(0, Math.floor(totalBeds * (0.1 + (seed % 30) / 100)));
+  const icuTotal = Math.floor(totalBeds * 0.08);
+  const icuAvailable = Math.floor(icuTotal * (0.2 + (seed % 5) / 10));
+  const rating = +(3.5 + (seed % 15) / 10).toFixed(1);
+  const specs = ['Emergency Care', 'General Medicine', 'Trauma'];
+  if (seed % 3 === 0) specs.push('Cardiology');
+  if (seed % 4 === 0) specs.push('Orthopedics');
+  if (seed % 5 === 0) specs.push('Neurology');
+
+  return {
+    id,
+    name,
+    address,
+    city,
+    latitude: parseFloat(item.lat),
+    longitude: parseFloat(item.lon),
+    phone: '',
+    email: '',
+    totalBeds,
+    availableBeds,
+    icuTotal,
+    icuAvailable,
+    emergencyRating: Math.min(5, rating),
+    isActive: true,
+    specializations: specs.slice(0, 5),
+  };
+}
+
+async function fetchViaNominatim(lat: number, lng: number, radiusKm: number, limit: number): Promise<Hospital[]> {
+  // Calculate bounding box: 1 deg lat ≈ 111 km, 1 deg lon ≈ 111*cos(lat) km
+  const dLat = radiusKm / 111;
+  const dLon = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
+  const minLat = lat - dLat, maxLat = lat + dLat;
+  const minLon = lng - dLon, maxLon = lng + dLon;
+
+  const url =
+    `https://nominatim.openstreetmap.org/search` +
+    `?amenity=hospital&format=json&limit=20` +
+    `&viewbox=${minLon},${maxLat},${maxLon},${minLat}&bounded=1`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'Accept-Language': 'en' },
+    });
+    if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
+    const items: any[] = await res.json();
+    if (!Array.isArray(items) || items.length === 0) throw new Error('No results');
+
+    return items
+      .map(nominatimResultToHospital)
+      .map((h) => ({ h, d: haversine(lat, lng, h.latitude, h.longitude) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, limit)
+      .map(({ h }) => h);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// --- Overpass fallback via allorigins CORS proxy ---
+function osmNodeToHospitalFallback(node: any): Hospital {
+  const tags = node.tags || {};
+  const name = tags.name || tags['name:en'] || 'Hospital';
+  const city = tags['addr:city'] || tags['addr:district'] || '';
+  const address = [tags['addr:housenumber'], tags['addr:street']].filter(Boolean).join(' ') || city;
+  const seed = node.id % 1000;
+  const totalBeds = 100 + (seed % 400);
+  const availableBeds = Math.max(0, Math.floor(totalBeds * (0.1 + (seed % 30) / 100)));
+  const icuTotal = Math.floor(totalBeds * 0.08);
+  const icuAvailable = Math.floor(icuTotal * (0.2 + (seed % 5) / 10));
+  const rating = +(3.5 + (seed % 15) / 10).toFixed(1);
+  const specs = ['Emergency Care', 'General Medicine', 'Trauma'];
+  if (seed % 3 === 0) specs.push('Cardiology');
+  if (seed % 4 === 0) specs.push('Orthopedics');
+
+  return {
+    id: `osm-${node.id}`,
+    name, address, city,
+    latitude: node.lat,
+    longitude: node.lon,
+    phone: tags.phone || tags['contact:phone'] || '',
+    email: '', totalBeds, availableBeds, icuTotal, icuAvailable,
+    emergencyRating: Math.min(5, rating),
+    isActive: true,
+    specializations: specs,
+  };
+}
+
+async function fetchViaOverpassProxy(lat: number, lng: number, radiusM: number, limit: number): Promise<Hospital[]> {
+  const query =
+    `[out:json][timeout:12];(` +
+    `node["amenity"="hospital"](around:${radiusM},${lat},${lng});` +
+    `node["healthcare"="hospital"](around:${radiusM},${lat},${lng});` +
+    `);out body;`;
+
+  const target = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+  const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Overpass proxy HTTP ${res.status}`);
+    const data = await res.json();
+    const elements: any[] = data.elements || [];
+    return elements
+      .filter((el) => el.lat && el.lon && el.tags?.name)
+      .map(osmNodeToHospitalFallback)
+      .map((h) => ({ h, d: haversine(lat, lng, h.latitude, h.longitude) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, limit)
+      .map(({ h }) => h);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Main fetch — Nominatim first (fast + CORS-safe), Overpass via proxy as fallback
 async function fetchNearbyHospitals(
   lat: number,
   lng: number,
   radiusM = 10000,
   limit = 5,
 ): Promise<Hospital[]> {
-  const query = buildOverpassQuery(lat, lng, radiusM);
-
-  let hospitals: Hospital[] = [];
-
   try {
-    // Race all mirrors — 8 second window, take whatever we get first
-    hospitals = await Promise.any(
-      OVERPASS_MIRRORS.map((mirror) => fetchFromMirror(mirror, query, 8000)),
-    );
+    const results = await fetchViaNominatim(lat, lng, radiusM / 1000, limit);
+    if (results.length > 0) return results;
+    throw new Error('Nominatim returned 0 results');
   } catch {
-    try {
-      // All direct mirrors failed — try CORS proxy with 10s
-      hospitals = await fetchFromCorsProxy(query);
-    } catch {
-      throw new Error('Could not reach any hospital data source');
-    }
+    // Nominatim had no results or failed — try Overpass via CORS proxy
+    return fetchViaOverpassProxy(lat, lng, radiusM, limit);
   }
-
-  // Sort by distance from user and return nearest `limit` only
-  return hospitals
-    .map((h) => ({ h, d: haversine(lat, lng, h.latitude, h.longitude) }))
-    .sort((a, b) => a.d - b.d)
-    .slice(0, limit)
-    .map(({ h }) => h);
 }
 
 
